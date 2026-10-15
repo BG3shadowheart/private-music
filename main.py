@@ -24,7 +24,7 @@ SLSKD_KEY     = os.environ["SLSKD_API_KEY"]
 
 DOWNLOAD_DIR  = Path(os.environ.get("DOWNLOAD_DIR", "/data/downloads"))
 HTTP_PORT     = int(os.environ.get("HTTP_PORT", 8080))
-PUBLIC_HOST   = os.environ["PUBLIC_HOST"]   # e.g. bot.railway.internal
+PUBLIC_HOST   = os.environ["PUBLIC_HOST"]
 
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -34,7 +34,6 @@ log = logging.getLogger("soulseek-bot")
 # ---------- HTTP file server ----------
 async def serve_audio(request):
     fname = request.match_info["fname"]
-    # prevent path traversal
     fname = os.path.basename(fname)
     path = DOWNLOAD_DIR / fname
     if not path.exists():
@@ -54,29 +53,23 @@ async def start_http_server():
 HEADERS = {"X-API-Key": SLSKD_KEY}
 
 async def slskd_search(query: str, timeout: int = 12):
-    """Start a Soulseek search, wait, return the responses list."""
     async with aiohttp.ClientSession(headers=HEADERS) as s:
-        r = await s.post(f"{SLSKD_URL}/api/v0/searches",
-                         json={"searchText": query})
+        r = await s.post(f"{SLSKD_URL}/api/v0/searches", json={"searchText": query})
         r.raise_for_status()
         search_id = (await r.json())["id"]
 
-        # Poll until timeout or enough results
         deadline = asyncio.get_event_loop().time() + timeout
-        best_count = 0
         while asyncio.get_event_loop().time() < deadline:
             await asyncio.sleep(2)
             r = await s.get(f"{SLSKD_URL}/api/v0/searches/{search_id}")
             data = await r.json()
             count = len(data.get("responses", []))
-            if count >= 20:   # enough results, stop early
+            if count >= 20:
                 break
-            best_count = count
 
         r = await s.get(f"{SLSKD_URL}/api/v0/searches/{search_id}")
         data = await r.json()
 
-        # Clean up server-side search
         try:
             await s.delete(f"{SLSKD_URL}/api/v0/searches/{search_id}")
         except Exception:
@@ -85,15 +78,13 @@ async def slskd_search(query: str, timeout: int = 12):
         return data.get("responses", [])
 
 def score_file(filename: str, filesize: int, bitrate: int) -> float:
-    """Higher is better. Prefer lossless, high bitrate, common audio ext."""
     ext = Path(filename).suffix.lower()
     ext_score = {".flac": 100, ".wav": 90, ".m4a": 70, ".mp3": 60, ".ogg": 55}.get(ext, 0)
-    bit_score = min(bitrate or 0, 1411) / 20.0     # 320 kbps -> 16, 1411 -> 70
-    size_score = min(filesize / (1024 * 1024), 100) / 5  # up to +20 for ~100MB
+    bit_score = min(bitrate or 0, 1411) / 20.0
+    size_score = min(filesize / (1024 * 1024), 100) / 5
     return ext_score + bit_score + size_score
 
 def pick_best(responses, query: str):
-    """Choose the best (username, file) pair from slskd search responses."""
     candidates = []
     q_tokens = set(re.findall(r"\w+", query.lower()))
 
@@ -107,13 +98,12 @@ def pick_best(responses, query: str):
             ext = Path(fname).suffix.lower()
             if ext not in {".flac", ".mp3", ".m4a", ".wav", ".ogg"}:
                 continue
-            # Require at least one query token to appear in the filename
             fname_tokens = set(re.findall(r"\w+", fname.lower()))
             if not (q_tokens & fname_tokens):
                 continue
             score = score_file(fname, f.get("size", 0), f.get("bitRate", 0))
             queue = resp.get("queueLength", 0)
-            score -= queue * 0.5    # shorter queue = better
+            score -= queue * 0.5
             candidates.append((score, resp["username"], f))
 
     if not candidates:
@@ -122,14 +112,11 @@ def pick_best(responses, query: str):
     return candidates[0][1], candidates[0][2]
 
 async def slskd_download(username: str, file_info: dict, timeout: int = 180):
-    """Enqueue a download and wait for it to complete. Returns local path."""
     async with aiohttp.ClientSession(headers=HEADERS) as s:
         payload = [{"filename": file_info["filename"], "size": file_info["size"]}]
-        r = await s.post(f"{SLSKD_URL}/api/v0/transfers/downloads/{username}",
-                         json=payload)
+        r = await s.post(f"{SLSKD_URL}/api/v0/transfers/downloads/{username}", json=payload)
         r.raise_for_status()
 
-        # Poll transfer status
         deadline = asyncio.get_event_loop().time() + timeout
         target_name = Path(file_info["filename"]).name
 
@@ -197,8 +184,7 @@ class Music(commands.Cog):
                 return
             username, file_info = best
             fname = Path(file_info["filename"]).name
-            await ctx.send(f"Downloading `{fname}` from **{username}** "
-                           f"({file_info.get('bitRate','?')} kbps)…")
+            await ctx.send(f"Downloading `{fname}` from **{username}** ({file_info.get('bitRate','?')} kbps)…")
 
             local_path = await slskd_download(username, file_info)
             url = f"http://{PUBLIC_HOST}:{HTTP_PORT}/audio/{urllib.parse.quote(local_path.name)}"
@@ -224,7 +210,6 @@ class Music(commands.Cog):
 @bot.event
 async def on_ready():
     log.info("Logged in as %s", bot.user)
-    await bot.load_extension("__main__")  # no-op, just keeps log tidy
 
 @bot.event
 async def setup_hook():
