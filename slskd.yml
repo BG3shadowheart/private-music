@@ -17,7 +17,7 @@ web:
 
 shares:
   directories:
-    - /data/downloads   # share what you download (required by protocol)
+    - /data/downloads
 
 global:
   download:
