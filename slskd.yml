@@ -1,0 +1,29 @@
+soulseek:
+  username: ${SLSKD_USERNAME}
+  password: ${SLSKD_PASSWORD}
+
+directories:
+  downloads: /data/downloads
+  incomplete: /data/incomplete
+
+web:
+  authentication:
+    username: admin
+    password: ${SLSKD_WEB_PASSWORD}
+    api_keys:
+      bot:
+        key: ${SLSKD_API_KEY}
+        role: readwrite
+
+shares:
+  directories:
+    - /data/downloads   # share what you download (required by protocol)
+
+global:
+  download:
+    slots: 2
+  upload:
+    slots: 1
+  limits:
+    download: 0
+    upload: 0
