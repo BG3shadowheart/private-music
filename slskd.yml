@@ -14,6 +14,7 @@ web:
       bot:
         key: ${SLSKD_API_KEY}
         role: readwrite
+  port: 5030
 
 shares:
   directories:
@@ -21,7 +22,7 @@ shares:
 
 global:
   download:
-    slots: 2
+    slots: 4
   upload:
     slots: 1
   limits:
