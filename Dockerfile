@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg curl ca-certificates unzip tini \
+    ffmpeg curl ca-certificates unzip tini libicu-dev \
  && rm -rf /var/lib/apt/lists/*
 
 ARG SLSKD_VERSION=0.22.5
