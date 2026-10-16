@@ -27,6 +27,8 @@ HTTP_PORT     = int(os.environ.get("HTTP_PORT", 8080))
 # The Lavalink service fetches completed files over Railway private networking.
 # Example: http://${{private-music.RAILWAY_PRIVATE_DOMAIN}}:8080
 AUDIO_BASE_URL = os.environ.get("AUDIO_BASE_URL", "").rstrip("/")
+if not AUDIO_BASE_URL and os.environ.get("RAILWAY_PRIVATE_DOMAIN"):
+    AUDIO_BASE_URL = f"http://{os.environ['RAILWAY_PRIVATE_DOMAIN']}:{HTTP_PORT}"
 
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
