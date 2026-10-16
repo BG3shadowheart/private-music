@@ -144,7 +144,7 @@ async def slskd_download(username: str, file_info: dict, timeout: int = 180):
 # ---------- Discord bot ----------
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix=".", intents=intents)
+bot = commands.Bot(command_prefix=".", intents=intents, help_command=None)
 
 class Music(commands.Cog):
     def __init__(self, bot):
