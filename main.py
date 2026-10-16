@@ -24,7 +24,9 @@ SLSKD_KEY     = os.environ["SLSKD_API_KEY"]
 
 DOWNLOAD_DIR  = Path(os.environ.get("DOWNLOAD_DIR", "/data/downloads"))
 HTTP_PORT     = int(os.environ.get("HTTP_PORT", 8080))
-PUBLIC_HOST   = os.environ["PUBLIC_HOST"]
+# The Lavalink service fetches completed files over Railway private networking.
+# Example: http://${{private-music.RAILWAY_PRIVATE_DOMAIN}}:8080
+AUDIO_BASE_URL = os.environ.get("AUDIO_BASE_URL", "").rstrip("/")
 
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -147,11 +149,13 @@ class Music(commands.Cog):
         self.bot = bot
 
     async def get_player(self, ctx):
-        if ctx.voice_client:
-            return ctx.voice_client
         if not ctx.author.voice:
             await ctx.send("Join a voice channel first.")
             return None
+        if ctx.voice_client:
+            if ctx.voice_client.channel != ctx.author.voice.channel:
+                await ctx.voice_client.move_to(ctx.author.voice.channel)
+            return ctx.voice_client
         try:
             return await ctx.author.voice.channel.connect(
                 cls=wavelink.Player, self_deaf=False, reconnect=True, timeout=30.0)
@@ -187,15 +191,22 @@ class Music(commands.Cog):
             await ctx.send(f"Downloading `{fname}` from **{username}** ({file_info.get('bitRate','?')} kbps)…")
 
             local_path = await slskd_download(username, file_info)
-            url = f"http://{PUBLIC_HOST}:{HTTP_PORT}/audio/{urllib.parse.quote(local_path.name)}"
+            if not AUDIO_BASE_URL:
+                await ctx.send("Audio server is not configured. Set AUDIO_BASE_URL on Railway.")
+                return
+            url = f"{AUDIO_BASE_URL}/audio/{urllib.parse.quote(local_path.name)}"
 
             tracks = await wavelink.Playable.search(url)
             if not tracks:
                 await ctx.send("Lavalink couldn't load the file.")
                 return
             track = tracks[0] if not isinstance(tracks, wavelink.Playlist) else tracks.tracks[0]
-            await player.play(track)
-            await ctx.send(f"▶️ Now playing: **{track.title}**")
+            if player.playing or player.paused:
+                await player.queue.put_wait(track)
+                await ctx.send(f"➕ Added to queue: **{track.title}**")
+            else:
+                await player.play(track)
+                await ctx.send(f"▶️ Now playing: **{track.title}**")
 
         except Exception as e:
             log.exception(".play failed")
@@ -204,8 +215,17 @@ class Music(commands.Cog):
     @commands.command()
     async def stop(self, ctx):
         if ctx.voice_client:
-            await ctx.voice_client.disconnect()
-            await ctx.send("Stopped.")
+            ctx.voice_client.queue.clear()
+            await ctx.voice_client.skip(force=True)
+            await ctx.send("Stopped and cleared the queue. I will stay in voice.")
+
+    @commands.command(name="help")
+    async def help_command(self, ctx):
+        embed = discord.Embed(title="Private Music", description="Your 24/7 private library player", color=0xF4A7C3)
+        embed.add_field(name="`.join`", value="Join your voice channel and remain connected.", inline=False)
+        embed.add_field(name="`.play <song name>`", value="Find, download, and play a high-quality audio file.", inline=False)
+        embed.add_field(name="`.stop`", value="Stop playback and clear the queue while staying in voice.", inline=False)
+        await ctx.send(embed=embed)
 
 @bot.event
 async def on_ready():
@@ -219,6 +239,15 @@ async def setup_hook():
     )
     await wavelink.Pool.connect(nodes=[node], client=bot, cache_capacity=100)
     log.info("Connected to Lavalink")
+
+@bot.event
+async def on_wavelink_track_end(payload: wavelink.TrackEndEventPayload):
+    """Advance one track at a time; never overlap audio streams."""
+    player = payload.player
+    if player.queue.is_empty:
+        return
+    next_track = player.queue.get()
+    await player.play(next_track)
 
 async def main():
     await start_http_server()
